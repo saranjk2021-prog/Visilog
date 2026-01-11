@@ -13,6 +13,19 @@ except Exception as e:
 
 st.title("🛠️ Manage Inventory Database")
 
+# This is what a Dashboard looks like, unlike the Management tool
+st.subheader("📊 Live Inventory Dashboard")
+
+# Fetch all data to show on screen
+df = pd.DataFrame(supabase.table("stock").select("*").execute().data)
+
+if not df.empty:
+    # Shows the visual "Dashboard" tiles
+    st.metric("Total Unique SKUs", len(df))
+    st.metric("Total Stock Volume", df['quantity'].sum())
+    
+    # Shows the actual table content
+    st.dataframe(df)
 # --- SECTION 1: ADD NEW ITEM ---
 st.subheader("➕ Add New Product")
 with st.form("add_form", clear_on_submit=True):
@@ -58,16 +71,4 @@ try:
 except Exception as e:
     st.error(f"Could not load delete list: {e}")
 
-# This is what a Dashboard looks like, unlike the Management tool
-st.subheader("📊 Live Inventory Dashboard")
 
-# Fetch all data to show on screen
-df = pd.DataFrame(supabase.table("stock").select("*").execute().data)
-
-if not df.empty:
-    # Shows the visual "Dashboard" tiles
-    st.metric("Total Unique SKUs", len(df))
-    st.metric("Total Stock Volume", df['quantity'].sum())
-    
-    # Shows the actual table content
-    st.dataframe(df)
