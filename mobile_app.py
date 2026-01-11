@@ -57,3 +57,17 @@ try:
         st.info("No items available to delete.")
 except Exception as e:
     st.error(f"Could not load delete list: {e}")
+
+# This is what a Dashboard looks like, unlike the Management tool
+st.subheader("📊 Live Inventory Dashboard")
+
+# Fetch all data to show on screen
+df = pd.DataFrame(supabase.table("stock").select("*").execute().data)
+
+if not df.empty:
+    # Shows the visual "Dashboard" tiles
+    st.metric("Total Unique SKUs", len(df))
+    st.metric("Total Stock Volume", df['quantity'].sum())
+    
+    # Shows the actual table content
+    st.dataframe(df)
