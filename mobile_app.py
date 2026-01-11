@@ -1,71 +1,57 @@
 import streamlit as st
-import pandas as pd
 import sqlite3
-from datetime import datetime
+import pandas as pd
 
-# --- MOBILE CONFIG ---
-st.set_page_config(page_title="Visilog Mobile Admin", layout="centered")
+# --- MOBILE APP THEME ---
+st.set_page_config(page_title="Visilog Mobile", layout="centered")
 
-def get_db_connection():
-    return sqlite3.connect('inventory.db')
+def run_query(query, params=()):
+    with sqlite3.connect('inventory.db') as conn:
+        return pd.read_sql_query(query, conn) if "SELECT" in query else conn.execute(query, params)
 
-# Custom CSS for Mobile Styling
-st.markdown("""
-    <style>
-    .stMetric { background-color: #f0f2f6; padding: 15px; border-radius: 10px; border: 1px solid #ddd; }
-    .main { background-color: #fafafa; }
-    .stButton>button { width: 100%; border-radius: 20px; height: 3em; background-color: #007bff; color: white; }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("📦 Visilog Mobile")
 
-# --- DATA FETCH ---
-conn = get_db_connection()
-df_stock = pd.read_sql_query("SELECT * FROM stock", conn)
-df_logs = pd.read_sql_query("SELECT * FROM logs ORDER BY timestamp DESC LIMIT 10", conn)
-conn.close()
+# --- 1. QUICK ACTIONS ---
+with st.expander("➕ Add New Transaction", expanded=False):
+    sku_list = run_query("SELECT sku FROM stock")['sku'].tolist()
+    selected_sku = st.selectbox("Select SKU", sku_list)
+    action_type = st.radio("Action", ["IN", "OUT"], horizontal=True)
+    
+    if st.button("Confirm Transaction"):
+        delta = 1 if action_type == "IN" else -1
+        # Update Stock
+        with sqlite3.connect('inventory.db') as conn:
+            conn.execute("UPDATE stock SET quantity = quantity + ? WHERE sku = ?", (delta, selected_sku))
+            conn.execute("INSERT INTO logs (sku, action, timestamp) VALUES (?, ?, datetime('now'))", (selected_sku, action_type))
+        st.success(f"Updated {selected_sku}!")
+        st.rerun()
 
-# --- HEADER ---
-st.title("📱 Admin Mobile")
-st.write(f"Updated: {datetime.now().strftime('%H:%M')}")
+# --- 2. THE INVENTORY LIST ---
+st.subheader("Current Stock")
+df = run_query("SELECT name, quantity, sku FROM stock")
 
-# --- 1. QUICK STATUS (Cards) ---
-st.subheader("System Status")
-low_stock_count = len(df_stock[df_stock['quantity'] < 10])
+for _, row in df.iterrows():
+    # Create a nice card for each item
+    with st.container():
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown(f"**{row['name']}**")
+            st.caption(f"SKU: {row['sku']}")
+        with col2:
+            color = "red" if row['quantity'] < 10 else "green"
+            st.markdown(f"<h3 style='text-align:right;color:{color};'>{row['quantity']}</h3>", unsafe_allow_html=True)
+        st.divider()
 
-c1, c2 = st.columns(2)
-with c1:
-    st.metric("📦 Items", len(df_stock))
-with c2:
-    status_color = "🔴" if low_stock_count > 0 else "🟢"
-    st.metric("Alerts", f"{status_color} {low_stock_count}")
+import streamlit as st
+from supabase import create_client
 
-# --- 2. CRITICAL ALERTS ---
-if low_stock_count > 0:
-    with st.expander("🚨 CRITICAL LOW STOCK", expanded=True):
-        low_items = df_stock[df_stock['quantity'] < 10]
-        for _, item in low_items.iterrows():
-            st.warning(f"**{item['name']}**: {item['quantity']} left")
+# Use the secrets we added to Streamlit Cloud
+url = st.secrets["SUPABASE_URL"]
+key = st.secrets["SUPABASE_KEY"]
+supabase = create_client(url, key)
 
-# --- 3. RECENT ACTIVITY (Simple List) ---
-st.subheader("🕒 Recent Activity")
-for _, log in df_logs.head(5).iterrows():
-    # Find name for the SKU
-    p_name = df_stock[df_stock['sku'] == log['sku']]['name'].iloc[0] if log['sku'] in df_stock['sku'].values else "Unknown"
-    icon = "📥" if log['action'] == "IN" else "📤"
-    st.info(f"{icon} **{p_name}** | {log['action']} at {log['timestamp']}")
-
-# --- 4. QUICK SEARCH ---
-st.divider()
-st.subheader("🔍 Find Product")
-search_query = st.text_input("Enter SKU or Name")
-if search_query:
-    results = df_stock[df_stock['name'].str.contains(search_query, case=False) | df_stock['sku'].str.contains(search_query, case=False)]
-    if not results.empty:
-        for _, res in results.iterrows():
-            st.success(f"**{res['name']}**\n\nSKU: {res['sku']} | Stock: {res['quantity']}")
-    else:
-        st.error("No item found.")
-
-# --- FOOTER ---
-if st.button("🔄 Refresh Data"):
-    st.rerun()
+# Correct way to fetch data from Supabase
+def get_data():
+    # This calls the 'stock' table we just created in the SQL Editor
+    response = supabase.table("stock").select("*").execute()
+    return response.data
